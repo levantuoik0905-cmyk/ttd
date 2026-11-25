@@ -1,0 +1,178 @@
+local Players=game:GetService("Players")
+local UIS=game:GetService("UserInputService")
+local LP=Players.LocalPlayer
+local PG=LP:WaitForChild("PlayerGui")
+local function new(c,p,par)
+	local o=Instance.new(c)
+	for k,v in pairs(p) do o[k]=v end
+	o.Parent=par
+	return o
+end
+local function isTap(i) return i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 end
+local sg=new("ScreenGui",{Name="TTDPKT",ResetOnSpawn=false,IgnoreGuiInset=true},PG)
+local frame=new("Frame",{Size=UDim2.fromOffset(212,178),Position=UDim2.new(0,16,0.28,0),BackgroundColor3=Color3.fromRGB(22,23,28),BorderSizePixel=0,Active=true,ClipsDescendants=true},sg)
+local title=new("Frame",{Size=UDim2.new(1,0,0,22),BackgroundColor3=Color3.fromRGB(38,40,52),BorderSizePixel=0,Active=true},frame)
+new("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="TTD PKT DUPE",TextColor3=Color3.fromRGB(140,200,255),TextSize=12,Font=Enum.Font.GothamBold},title)
+print("S1 MENU OK")
+local function mkLbl(y) return new("TextLabel",{Size=UDim2.new(1,-16,0,14),Position=UDim2.fromOffset(8,y),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,TextSize=11,Font=Enum.Font.Code,TextColor3=Color3.fromRGB(190,190,200),Text="-"},frame) end
+local function mkBtn(txt,y,x,w,h,fn)
+	local b=new("TextButton",{Size=UDim2.fromOffset(w,h),Position=UDim2.fromOffset(x,y),BackgroundColor3=Color3.fromRGB(46,49,60),TextColor3=Color3.fromRGB(235,235,242),TextSize=13,Font=Enum.Font.GothamBold,BorderSizePixel=0,Text=txt},frame)
+	local last=0
+	b.InputBegan:Connect(function(i)
+		if not isTap(i) then return end
+		local t=os.clock() if t-last<0.25 then return end
+		last=t pcall(fn)
+	end)
+	return b
+end
+local pkts={}
+local lib=nil
+local locked,running=false,false
+local mode,mult="BURST",500
+local sent,fails,busy=0,0,false
+local status=mkLbl(120) local targetLbl=mkLbl(136) local gemLbl=mkLbl(152)
+status.Text="dang tim lib"
+local drag=false local off=Vector3.zero
+title.InputBegan:Connect(function(i)
+	if not isTap(i) then return end
+	drag=true off=i.Position-Vector3.new(frame.AbsolutePosition.X,frame.AbsolutePosition.Y,0)
+end)
+UIS.InputEnded:Connect(function(i)
+	if isTap(i) then drag=false end
+end)
+UIS.InputChanged:Connect(function(i)
+	if not drag or not isTap(i) then return end
+	frame.Position=UDim2.fromOffset(i.Position.X-off.X,i.Position.Y-off.Y)
+end)
+local function readGem()
+	local best=0
+	pcall(function()
+		local ls=LP:FindFirstChild("leaderstats")
+		if ls then for _,v in ipairs(ls:GetChildren()) do local n=v:IsA("ValueBase") and tonumber(v.Value) if n and n>best then best=n end end end
+		for _,d in ipairs(PG:GetDescendants()) do if d:IsA("TextLabel") and d.Text:lower():find("gem") then local n=tonumber((d.Text:gsub("[^%d]",""))) if n and n>best then best=n end end end
+	end)
+	return best
+end
+local libs={}
+for _,n in ipairs({"rnet","RakNet","Raknet","raknet"}) do
+	local ok,v=pcall(function() return getgenv()[n] end)
+	if ok and type(v)=="table" then
+		local o2,s=pcall(function() return v.send end)
+		if o2 and type(s)=="function" then libs[#libs+1]=v end
+	end
+end
+print("libs="..#libs)
+if libs[1] then local s={} for k,v in pairs(libs[1]) do s[#s+1]=tostring(k).."="..type(v) end print("LK "..table.concat(s," | ")) end
+local function rebuild(b)
+	if not lib or type(b)~="table" then return nil end
+	if type(lib.Packet)=="function" then
+		local o,r=pcall(lib.Packet,b) if o then return r end
+		local o2,r2=pcall(lib.Packet,lib,b) if o2 then return r2 end
+	end
+	if type(lib.new_packet)=="function" then
+		local o,r=pcall(lib.new_packet,lib,131,b) if o then return r end
+	end
+	return nil
+end
+local function sendPkt(e)
+	if not lib then return false end
+	if pcall(function() lib.send(lib,e.p) end) then return true end
+	if pcall(function() lib.send(e.p) end) then return true end
+	local np=rebuild(e.b)
+	if np then return pcall(function() lib.send(lib,np) end) end
+	return false
+end
+local function onPkt(p)
+	pcall(function()
+		if #pkts>=8 then return end
+		local id local a1,b1=pcall(function() return p.PacketId end) local a2,b2=pcall(function() return p.id end)
+		if a1 and type(b1)=="number" then id=b1 elseif a2 and type(b2)=="number" then id=b2 end
+		if id~=131 then return end
+		local by local a3,b3=pcall(function() return p:AsArray() end) local a4,b4=pcall(function() return p.AsArray(p) end)
+		if a3 and b3 then by=b3 elseif a4 and b4 then by=b4 end
+		if type(by)~="table" then return end
+		local len=#by
+		if len==0 or len>400 then return end
+		local k=table.concat(by,",")
+		for _,e in ipairs(pkts) do if e.k==k then return end end
+		pkts[#pkts+1]={p=p,b=by,k=k}
+		targetLbl.Text="PKT #"..#pkts.." "..len.."b"
+		status.Text="da bat "..#pkts
+	end)
+end
+local function tryHook(t,tag)
+	if not t or type(t)=="function" then return false end
+	for _,n in ipairs({"add_send_hook","addSendHook","add_outgoing_hook","addOutgoingHook","HookOutgoing","hook_outgoing","on_send","onSend","hook","Hook"}) do
+		local ok,v=pcall(function() return t[n] end)
+		if ok and type(v)=="function" then
+			local o,e=pcall(function() t[n](t,onPkt) end)
+			if not o then o,e=pcall(function() t[n](onPkt) end) end
+			print(tag.."."..n.." -> "..(o and "OK" or ("LOI "..tostring(e))))
+			if o then return true end
+		end
+	end
+	for _,n in ipairs({"Capture","capture","SendHook"}) do
+		local ok,v=pcall(function() return t[n] end)
+		if ok and v then
+			local o,e
+			if type(v)=="function" then o,e=pcall(function() t[n](t,onPkt) end)
+			elseif type(v)=="table" or type(v)=="userdata" then o,e=pcall(function() v:Connect(onPkt) end) end
+			print(tag.."."..n.." -> "..(o and "OK" or ("LOI "..tostring(e))))
+			if o then return true end
+		end
+	end
+	return false
+end
+local pktOk=false
+for i=1,#libs do
+	local t=libs[i]
+	pcall(function() if t.start_capture then t.start_capture(t) end end)
+	pcall(function() if t.startCapture then t.startCapture(t) end end)
+	if tryHook(t,"lib"..i) then lib=t pktOk=true break end
+end
+if lib and lib.is_enabled then local ok,en=pcall(function() return lib.is_enabled(lib) end) print("enabled="..tostring(ok and en or "?")) end
+if pktOk then print("S2 PKT OK") else print("S2 PKT NO") end
+print("S3 SAN SANG")
+local btnDupe
+local function stopRun() running=false btnDupe.Text="DUPE" end
+local function startRun()
+	if running then stopRun() status.Text="da dung" return end
+	if busy then status.Text="dang ban" return end
+	if #pkts==0 then status.Text="chua co packet 0x83" return end
+	local g0=readGem() local gs=g0
+	gemLbl.Text="gem: "..tostring(g0)
+	sent=0 fails=0 running=true btnDupe.Text="STOP"
+	task.spawn(function()
+		local i=0 local why=nil
+		while running and sent<mult do
+			local e=pkts[(i%#pkts)+1]
+			busy=true
+			local ok=sendPkt(e)
+			busy=false
+			if not ok then fails=fails+1 end
+			sent=sent+1 i=i+1
+			if mode=="SLOW" then task.wait(0.03) end
+			if sent%100==0 then
+				if mode=="BURST" then task.wait() end
+				local g=readGem() gemLbl.Text="gem: "..tostring(g)
+				if g>g0 then g0=g fails=0 else fails=fails+1 end
+				if fails>=4 then why="dung: khong an" running=false end
+			end
+		end
+		running=false btnDupe.Text="DUPE"
+		local g1=readGem() gemLbl.Text="gem: "..tostring(g1)
+		local d=g1-gs
+		if why then status.Text=why elseif d>0 then status.Text="+"..tostring(d).." gem" else status.Text="xong: "..tostring(sent).." +0" end
+	end)
+end
+btnDupe=mkBtn("DUPE",26,8,196,34,function() startRun() end)
+local function setMult(v) return function() mult=v status.Text="count: "..tostring(v) end end
+mkBtn("x500",64,8,45,24,setMult(500))
+mkBtn("x1000",64,57,45,24,setMult(1000))
+mkBtn("x5000",64,106,45,24,setMult(5000))
+mkBtn("x20000",64,155,45,24,setMult(20000))
+local btnMode
+btnMode=mkBtn("BURST",92,8,94,22,function() if mode=="BURST" then mode="SLOW" else mode="BURST" end btnMode.Text=mode status.Text="mode: "..mode end)
+local btnLock
+btnLock=mkBtn("FREE",92,108,94,22,function() locked=not locked if locked then btnLock.Text="LOCK" else btnLock.Text="FREE" end status.Text=locked and "lock: bat" or "lock: tat" end)
+print("S4 XONG")
